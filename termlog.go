@@ -1,11 +1,17 @@
-// Copyright (C) 2010, Kyle Lemons <kyle@kylelemons.net>.  All rights reserved.
-
+/* term.go
+ *
+ * Copyright (c) 2010, Kyle Lemons <kyle@kylelemons.net> (creator).
+ * All rights reserved.
+ *
+ * This software may be modified and distributed under the terms
+ * of the New BSD license.  See the LICENSE file for details.
+ */
 package log4go
 
 import (
+	"fmt"
 	"io"
 	"os"
-	"fmt"
 )
 
 var stdout io.Writer = os.Stdout

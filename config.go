@@ -1,288 +1,157 @@
-// Copyright (C) 2010, Kyle Lemons <kyle@kylelemons.net>.  All rights reserved.
-
+/* config.go
+ *
+ * Copyright (c) 2015, Michael Guzelevich <mguzelevich@gmail.com>
+ * Copyright (c) 2010, Kyle Lemons <kyle@kylelemons.net> (creator).
+ * All rights reserved.
+ *
+ * This software may be modified and distributed under the terms
+ * of the New BSD license.  See the LICENSE file for details.
+ */
 package log4go
 
 import (
-	"encoding/xml"
-	"fmt"
 	"io/ioutil"
 	"os"
-	"strconv"
-	"strings"
+	"path/filepath"
 )
 
-type xmlProperty struct {
-	Name  string `xml:"name,attr"`
-	Value string `xml:",chardata"`
+type FilterItem struct {
+	Enabled    bool
+	Tag        string
+	Level      level
+	Type       LoggerType
+	Properties map[PropertyName]interface{}
 }
 
-type xmlFilter struct {
-	Enabled  string        `xml:"enabled,attr"`
-	Tag      string        `xml:"tag"`
-	Level    string        `xml:"level"`
-	Type     string        `xml:"type"`
-	Property []xmlProperty `xml:"property"`
+type LoggerCfg struct {
+	Filters []*FilterItem
 }
 
-type xmlLoggerConfig struct {
-	Filter []xmlFilter `xml:"filter"`
+func (fi *FilterItem) getString(p PropertyName) string {
+	return fi.getProperty(p).(string)
 }
 
-// Load XML configuration; see examples/example.xml for documentation
-func (log Logger) LoadConfiguration(filename string) {
-	log.Close()
+func (fi *FilterItem) getInt(p PropertyName) int {
+	return fi.getProperty(p).(int)
+}
 
-	// Open the configuration file
+func (fi *FilterItem) getBool(p PropertyName) bool {
+	return fi.getProperty(p).(bool)
+}
+
+func (fi *FilterItem) getProperty(p PropertyName) interface{} {
+	//err = nil
+
+	v, ok := fi.Properties[p]
+
+	switch p {
+	case FILENAME:
+		if !ok {
+			v = "log.log"
+			//err = Error{Message: "filename property is required"}
+		}
+	case FORMAT:
+		if !ok {
+			v = "[%D %T] [%L] (%S) %M"
+		}
+	case MAX_LINES:
+		if !ok {
+			v = 0
+		}
+	case MAX_SIZE:
+		if !ok {
+			v = 0
+		}
+	case MAX_RECORDS:
+		if !ok {
+			v = 0
+		}
+	case DAILY:
+		if !ok {
+			v = false
+		}
+	case ROTATE:
+		if !ok {
+			v = false
+		}
+		// default:
+		// 	err = Error{Message: fmt.Sprintf("Unknown property \"%s=%s\"", p, v)}
+	}
+	return v
+}
+
+func loadFile(filename string) ([]byte, error) {
 	fd, err := os.Open(filename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Could not open %q for reading: %s\n", filename, err)
-		os.Exit(1)
+		return []byte(""), loadConfigurationError{filename, "Could not open file for reading", err}
 	}
 
 	contents, err := ioutil.ReadAll(fd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Could not read %q: %s\n", filename, err)
-		os.Exit(1)
+		return []byte(""), loadConfigurationError{filename, "Could not read file", err}
 	}
+	return contents, nil
+}
 
-	xc := new(xmlLoggerConfig)
-	if err := xml.Unmarshal(contents, xc); err != nil {
-		fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Could not parse XML configuration in %q: %s\n", filename, err)
-		os.Exit(1)
-	}
+// Load XML configuration; see examples/example.xml for documentation
+func (log Logger) ApplyConfiguration(lc *LoggerCfg) error {
+	var filter LogWriter
+	for _, fi := range lc.Filters {
 
-	for _, xmlfilt := range xc.Filter {
-		var filt LogWriter
-		var lvl level
-		bad, good, enabled := false, true, false
-
-		// Check required children
-		if len(xmlfilt.Enabled) == 0 {
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required attribute %s for filter missing in %s\n", "enabled", filename)
-			bad = true
-		} else {
-			enabled = xmlfilt.Enabled != "false"
-		}
-		if len(xmlfilt.Tag) == 0 {
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required child <%s> for filter missing in %s\n", "tag", filename)
-			bad = true
-		}
-		if len(xmlfilt.Type) == 0 {
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required child <%s> for filter missing in %s\n", "type", filename)
-			bad = true
-		}
-		if len(xmlfilt.Level) == 0 {
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required child <%s> for filter missing in %s\n", "level", filename)
-			bad = true
+		switch fi.Type {
+		case CONSOLE:
+			filter = NewConsoleLogWriter()
+		case FILE:
+			filter = getFileLogWriter(fi)
+		case XML:
+			filter = getXmlLogWriter(fi)
+		case SOCKET:
+			filter = NewSocketLogWriter(fi.getString(PROTOCOL), fi.getString(ENDPOINT))
 		}
 
-		switch xmlfilt.Level {
-		case "FINEST":
-			lvl = FINEST
-		case "FINE":
-			lvl = FINE
-		case "DEBUG":
-			lvl = DEBUG
-		case "TRACE":
-			lvl = TRACE
-		case "INFO":
-			lvl = INFO
-		case "WARNING":
-			lvl = WARNING
-		case "ERROR":
-			lvl = ERROR
-		case "CRITICAL":
-			lvl = CRITICAL
-		default:
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required child <%s> for filter has unknown value in %s: %s\n", "level", filename, xmlfilt.Level)
-			bad = true
-		}
-
-		// Just so all of the required attributes are errored at the same time if missing
-		if bad {
-			os.Exit(1)
-		}
-
-		switch xmlfilt.Type {
-		case "console":
-			filt, good = xmlToConsoleLogWriter(filename, xmlfilt.Property, enabled)
-		case "file":
-			filt, good = xmlToFileLogWriter(filename, xmlfilt.Property, enabled)
-		case "xml":
-			filt, good = xmlToXMLLogWriter(filename, xmlfilt.Property, enabled)
-		case "socket":
-			filt, good = xmlToSocketLogWriter(filename, xmlfilt.Property, enabled)
-		default:
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Could not load XML configuration in %s: unknown filter type \"%s\"\n", filename, xmlfilt.Type)
-			os.Exit(1)
-		}
-
-		// Just so all of the required params are errored at the same time if wrong
-		if !good {
-			os.Exit(1)
-		}
-
-		// If we're disabled (syntax and correctness checks only), don't add to logger
-		if !enabled {
+		if !fi.Enabled {
 			continue
 		}
 
-		log[xmlfilt.Tag] = &Filter{lvl, filt}
+		log[fi.Tag] = &Filter{fi.Level, filter}
 	}
+	return nil
 }
 
-func xmlToConsoleLogWriter(filename string, props []xmlProperty, enabled bool) (ConsoleLogWriter, bool) {
-	// Parse properties
-	for _, prop := range props {
-		switch prop.Name {
-		default:
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Warning: Unknown property \"%s\" for console filter in %s\n", prop.Name, filename)
-		}
-	}
-
-	// If it's disabled, we're just checking syntax
-	if !enabled {
-		return nil, true
-	}
-
-	return NewConsoleLogWriter(), true
+func getFileLogWriter(fi *FilterItem) LogWriter {
+	flw := NewFileLogWriter(fi.getString(FILENAME), fi.getBool(ROTATE))
+	flw.SetFormat(fi.getString(FORMAT))
+	flw.SetRotateLines(fi.getInt(MAX_LINES))
+	flw.SetRotateSize(fi.getInt(MAX_SIZE))
+	flw.SetRotateDaily(fi.getBool(DAILY))
+	return flw
 }
 
-// Parse a number with K/M/G suffixes based on thousands (1000) or 2^10 (1024)
-func strToNumSuffix(str string, mult int) int {
-	num := 1
-	if len(str) > 1 {
-		switch str[len(str)-1] {
-		case 'G', 'g':
-			num *= mult
-			fallthrough
-		case 'M', 'm':
-			num *= mult
-			fallthrough
-		case 'K', 'k':
-			num *= mult
-			str = str[0 : len(str)-1]
-		}
-	}
-	parsed, _ := strconv.Atoi(str)
-	return parsed * num
-}
-func xmlToFileLogWriter(filename string, props []xmlProperty, enabled bool) (*FileLogWriter, bool) {
-	file := ""
-	format := "[%D %T] [%L] (%S) %M"
-	maxlines := 0
-	maxsize := 0
-	daily := false
-	rotate := false
+func getXmlLogWriter(fi *FilterItem) LogWriter {
+	xlw := NewXMLLogWriter(fi.getString(FILENAME), fi.getBool(ROTATE))
+	xlw.SetFormat(fi.getString(FORMAT))
+	xlw.SetRotateLines(fi.getInt(MAX_LINES))
+	xlw.SetRotateSize(fi.getInt(MAX_SIZE))
+	xlw.SetRotateDaily(fi.getBool(DAILY))
 
-	// Parse properties
-	for _, prop := range props {
-		switch prop.Name {
-		case "filename":
-			file = strings.Trim(prop.Value, " \r\n")
-		case "format":
-			format = strings.Trim(prop.Value, " \r\n")
-		case "maxlines":
-			maxlines = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1000)
-		case "maxsize":
-			maxsize = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1024)
-		case "daily":
-			daily = strings.Trim(prop.Value, " \r\n") != "false"
-		case "rotate":
-			rotate = strings.Trim(prop.Value, " \r\n") != "false"
-		default:
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Warning: Unknown property \"%s\" for file filter in %s\n", prop.Name, filename)
-		}
-	}
-
-	// Check properties
-	if len(file) == 0 {
-		fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required property \"%s\" for file filter missing in %s\n", "filename", filename)
-		return nil, false
-	}
-
-	// If it's disabled, we're just checking syntax
-	if !enabled {
-		return nil, true
-	}
-
-	flw := NewFileLogWriter(file, rotate)
-	flw.SetFormat(format)
-	flw.SetRotateLines(maxlines)
-	flw.SetRotateSize(maxsize)
-	flw.SetRotateDaily(daily)
-	return flw, true
+	return xlw
 }
 
-func xmlToXMLLogWriter(filename string, props []xmlProperty, enabled bool) (*FileLogWriter, bool) {
-	file := ""
-	maxrecords := 0
-	maxsize := 0
-	daily := false
-	rotate := false
+// Load XML configuration; see examples/example.xml for documentation
+func (log *Logger) LoadConfiguration(filename string) {
+	log.Close()
+	// Open the configuration file
+	contents, err := loadFile(filename)
+	checkFatalError(err)
 
-	// Parse properties
-	for _, prop := range props {
-		switch prop.Name {
-		case "filename":
-			file = strings.Trim(prop.Value, " \r\n")
-		case "maxrecords":
-			maxrecords = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1000)
-		case "maxsize":
-			maxsize = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1024)
-		case "daily":
-			daily = strings.Trim(prop.Value, " \r\n") != "false"
-		case "rotate":
-			rotate = strings.Trim(prop.Value, " \r\n") != "false"
-		default:
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Warning: Unknown property \"%s\" for xml filter in %s\n", prop.Name, filename)
-		}
+	ext := filepath.Ext(filename)
+	switch ext {
+	case ".xml":
+		err = log.loadXmlConfiguration(contents)
+	case ".yaml":
+		err = log.loadYamlConfiguration(contents)
+	default:
+		checkFatalError(internalError{Message: "unknown filename extention [" + ext + "]"})
 	}
-
-	// Check properties
-	if len(file) == 0 {
-		fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required property \"%s\" for xml filter missing in %s\n", "filename", filename)
-		return nil, false
-	}
-
-	// If it's disabled, we're just checking syntax
-	if !enabled {
-		return nil, true
-	}
-
-	xlw := NewXMLLogWriter(file, rotate)
-	xlw.SetRotateLines(maxrecords)
-	xlw.SetRotateSize(maxsize)
-	xlw.SetRotateDaily(daily)
-	return xlw, true
-}
-
-func xmlToSocketLogWriter(filename string, props []xmlProperty, enabled bool) (SocketLogWriter, bool) {
-	endpoint := ""
-	protocol := "udp"
-
-	// Parse properties
-	for _, prop := range props {
-		switch prop.Name {
-		case "endpoint":
-			endpoint = strings.Trim(prop.Value, " \r\n")
-		case "protocol":
-			protocol = strings.Trim(prop.Value, " \r\n")
-		default:
-			fmt.Fprintf(os.Stderr, "LoadConfiguration: Warning: Unknown property \"%s\" for file filter in %s\n", prop.Name, filename)
-		}
-	}
-
-	// Check properties
-	if len(endpoint) == 0 {
-		fmt.Fprintf(os.Stderr, "LoadConfiguration: Error: Required property \"%s\" for file filter missing in %s\n", "endpoint", filename)
-		return nil, false
-	}
-
-	// If it's disabled, we're just checking syntax
-	if !enabled {
-		return nil, true
-	}
-
-	return NewSocketLogWriter(protocol, endpoint), true
+	checkFatalError(err)
 }

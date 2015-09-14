@@ -1,0 +1,33 @@
+logging:
+  stdout:
+    enabled: true
+    type: console
+    level: DEBUG
+  file:
+    enabled: true
+    type: file
+    level: FINEST
+    properties:
+      filename: test.yaml.log
+      format: "[%D %T] [%L] (%S) %M"
+      rotate: false
+      maxsize: 0M
+      maxlines: 0K
+      daily: true
+  xmllog:
+    enabled: true
+    type: xml
+    level: TRACE
+    properties:
+      filename: trace.xml
+      rotate: true
+      maxsize: 100M
+      maxrecords: 6K
+      daily: false
+  donotopen:
+    enabled: false
+    type: socket
+    level: FINEST
+    properties:
+      endpoint: 192.168.1.255:12124
+      protocol: udp

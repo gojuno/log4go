@@ -1,3 +1,11 @@
+/* socket_service.go
+ *
+ * Copyright (c) 2010, Kyle Lemons <kyle@kylelemons.net> (creator).
+ * All rights reserved.
+ *
+ * This software may be modified and distributed under the terms
+ * of the New BSD license.  See the LICENSE file for details.
+ */
 package main
 
 import (
@@ -22,7 +30,7 @@ func main() {
 	flag.Parse()
 
 	// Bind to the port
-	bind, err := net.ResolveUDPAddr("0.0.0.0:" + *port)
+	bind, err := net.ResolveUDPAddr("udp", "0.0.0.0:"+*port)
 	e(err)
 
 	// Create listener
