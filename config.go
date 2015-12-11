@@ -100,7 +100,7 @@ func (log Logger) ApplyConfiguration(lc *LoggerCfg) error {
 
 		switch fi.Type {
 		case CONSOLE:
-			filter = NewConsoleLogWriter()
+			filter = getConsoleLogWriter(fi)
 		case FILE:
 			filter = getFileLogWriter(fi)
 		case XML:
@@ -116,6 +116,12 @@ func (log Logger) ApplyConfiguration(lc *LoggerCfg) error {
 		log[fi.Tag] = &Filter{fi.Level, filter}
 	}
 	return nil
+}
+
+func getConsoleLogWriter(fi *FilterItem) LogWriter {
+	clw := NewConsoleLogWriter()
+	clw.SetFormat(fi.getString(FORMAT))
+	return clw
 }
 
 func getFileLogWriter(fi *FilterItem) LogWriter {

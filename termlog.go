@@ -17,35 +17,39 @@ import (
 var stdout io.Writer = os.Stdout
 
 // This is the standard writer that prints to standard output.
-type ConsoleLogWriter chan *LogRecord
-
-// This creates a new ConsoleLogWriter
-func NewConsoleLogWriter() ConsoleLogWriter {
-	records := make(ConsoleLogWriter, LogBufferLength)
-	go records.run(stdout)
-	return records
+type ConsoleLogWriter struct {
+	recordsChan chan *LogRecord
+	format      string
 }
 
-func (w ConsoleLogWriter) run(out io.Writer) {
-	var timestr string
-	var timestrAt int64
+// This creates a new ConsoleLogWriter
+func NewConsoleLogWriter() *ConsoleLogWriter {
+	clw := ConsoleLogWriter{
+		format: "[%D %T] [%L] (%S) %M",
+	}
+	clw.recordsChan = make(chan *LogRecord, LogBufferLength)
+	go clw.run(stdout)
+	return &clw
+}
 
-	for rec := range w {
-		if at := rec.Created.UnixNano() / 1e9; at != timestrAt {
-			timestr, timestrAt = rec.Created.Format("01/02/06 15:04:05"), at
-		}
-		fmt.Fprint(out, "[", timestr, "] [", levelStrings[rec.Level], "] ", rec.Message, "\n")
+func (w *ConsoleLogWriter) SetFormat(format string) {
+	w.format = format
+}
+
+func (w *ConsoleLogWriter) run(out io.Writer) {
+	for rec := range w.recordsChan {
+		fmt.Fprint(out, FormatLogRecord(w.format, rec))
 	}
 }
 
 // This is the ConsoleLogWriter's output method.  This will block if the output
 // buffer is full.
-func (w ConsoleLogWriter) LogWrite(rec *LogRecord) {
-	w <- rec
+func (w *ConsoleLogWriter) LogWrite(rec *LogRecord) {
+	w.recordsChan <- rec
 }
 
 // Close stops the logger from sending messages to standard output.  Attempts to
 // send log messages to this logger after a Close have undefined behavior.
-func (w ConsoleLogWriter) Close() {
-	close(w)
+func (w *ConsoleLogWriter) Close() {
+	close(w.recordsChan)
 }
