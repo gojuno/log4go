@@ -97,7 +97,9 @@ func loadFile(filename string) ([]byte, error) {
 func (log Logger) ApplyConfiguration(lc *LoggerCfg) error {
 	var filter LogWriter
 	for _, fi := range lc.Filters {
-
+		if !fi.Enabled {
+			continue
+		}
 		switch fi.Type {
 		case CONSOLE:
 			filter = getConsoleLogWriter(fi)
@@ -107,10 +109,6 @@ func (log Logger) ApplyConfiguration(lc *LoggerCfg) error {
 			filter = getXmlLogWriter(fi)
 		case SOCKET:
 			filter = NewSocketLogWriter(fi.getString(PROTOCOL), fi.getString(ENDPOINT))
-		}
-
-		if !fi.Enabled {
-			continue
 		}
 
 		log[fi.Tag] = &Filter{fi.Level, filter}
