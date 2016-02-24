@@ -21,9 +21,9 @@ const (
 )
 
 type formatCacheType struct {
-	LastUpdateSeconds    int64
-	shortTime, shortDate string
-	longTime, longDate   string
+	LastUpdateSeconds                int64
+	shortTime, shortDate             string
+	longTime, longTimeNano, longDate string
 }
 
 var formatCache = &formatCacheType{}
