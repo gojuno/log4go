@@ -53,12 +53,14 @@ func FormatLogRecord(format string, rec *LogRecord) string {
 	if cache.LastUpdateSeconds != secs {
 		month, day, year := rec.Created.Month(), rec.Created.Day(), rec.Created.Year()
 		hour, minute, second := rec.Created.Hour(), rec.Created.Minute(), rec.Created.Second()
+		nano := rec.Created.Nanosecond()
 		zone, _ := rec.Created.Zone()
 		updated := &formatCacheType{
 			LastUpdateSeconds: secs,
 			shortTime:         fmt.Sprintf("%02d:%02d", hour, minute),
 			shortDate:         fmt.Sprintf("%02d/%02d/%02d", month, day, year%100),
 			longTime:          fmt.Sprintf("%02d:%02d:%02d %s", hour, minute, second, zone),
+			longTimeNano:      fmt.Sprintf("%02d:%02d:%02d.%d %s", hour, minute, second, nano, zone),
 			longDate:          fmt.Sprintf("%04d/%02d/%02d", year, month, day),
 		}
 		cache = *updated
@@ -74,6 +76,8 @@ func FormatLogRecord(format string, rec *LogRecord) string {
 			switch piece[0] {
 			case 'T':
 				out.WriteString(cache.longTime)
+			case 'N':
+				out.WriteString(cache.longTimeNano)
 			case 't':
 				out.WriteString(cache.shortTime)
 			case 'D':
