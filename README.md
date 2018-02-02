@@ -1,4 +1,4 @@
-# log4go
+# log4go [![GoDoc](https://godoc.org/github.com/gojuno/log4go?status.svg)](http://godoc.org/github.com/gojuno/log4go) [![Build Status](https://travis-ci.org/gojuno/log4go.svg?branch=master)](https://travis-ci.org/gojuno/log4go)
 
 [log4go](https://code.google.com/p/log4go/) ([github](https://github.com/kylelemons/log4go)) fork
 
